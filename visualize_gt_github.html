@@ -1,0 +1,578 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GT Visualization Tool - GitHub Version</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            background-color: #f5f5f5;
+            font-size: 16px;
+        }
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background-color: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            text-align: center;
+            font-size: 24px;
+        }
+        .controls {
+            margin: 20px 0;
+            padding: 15px;
+            background-color: #f9f9f9;
+            border-radius: 5px;
+        }
+        .control-group {
+            margin-bottom: 15px;
+        }
+        label {
+            font-weight: bold;
+            margin-right: 10px;
+            font-size: 16px;
+        }
+        input, select {
+            padding: 8px 12px;
+            font-size: 16px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            min-width: 300px;
+        }
+        button {
+            padding: 8px 16px;
+            font-size: 16px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            margin-left: 10px;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        button:disabled {
+            background-color: #ccc;
+            cursor: not-allowed;
+        }
+        .content-container {
+            margin-top: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+        .video-container, #image-container {
+            text-align: center;
+        }
+        video {
+            max-width: 100%;
+            height: auto;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            background-color: #000;
+        }
+        #visualization-canvas {
+            max-width: 100%;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        #text-container, #captioning-container {
+            margin-top: 20px;
+            padding: 15px;
+            background-color: #f9f9f9;
+            border-radius: 5px;
+            border: 1px solid #ddd;
+            max-height: 600px;
+            overflow-y: auto;
+        }
+        #text-content, #captioning-content {
+            white-space: pre-wrap;
+            font-family: 'Courier New', monospace;
+            font-size: 16px;
+            line-height: 1.6;
+            color: #333;
+        }
+        .timestamp {
+            color: #DC143C;
+            font-weight: bold;
+        }
+        .pred-timestamp {
+            color: #191970;
+            font-weight: bold;
+        }
+        .pred-timestamp-grounding {
+            color: #006400;
+            font-weight: bold;
+        }
+        .pred-caption {
+            color: #191970;
+        }
+        .captioning-sentence {
+            color: #191970;
+        }
+        .section-title {
+            font-weight: bold;
+            font-size: 18px;
+            margin-bottom: 10px;
+            color: #333;
+            text-align: center;
+        }
+        .loading {
+            display: none;
+            text-align: center;
+            margin: 20px 0;
+            color: #666;
+            font-size: 16px;
+        }
+        .error {
+            color: red;
+            margin-top: 10px;
+            font-size: 16px;
+        }
+        .info {
+            color: #666;
+            font-size: 14px;
+            margin-top: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>GT Visualization Tool - GitHub Version</h1>
+        <div class="controls">
+            <div class="control-group">
+                <label for="github-repo">GitHub Repository (格式: username/repo):</label>
+                <input type="text" id="github-repo" placeholder="例如: username/repo" value="">
+            </div>
+            <div class="control-group">
+                <label for="json-path">JSON文件路径 (相对于repo根目录):</label>
+                <input type="text" id="json-path" placeholder="例如: visualize/meeting.json" value="visualize/meeting.json">
+            </div>
+            <div class="control-group">
+                <label for="txt-path">TXT文件路径 (相对于repo根目录):</label>
+                <input type="text" id="txt-path" placeholder="例如: visualize/meeting.txt" value="visualize/meeting.txt">
+            </div>
+            <div class="control-group">
+                <label for="branch">分支名 (默认: main):</label>
+                <input type="text" id="branch" placeholder="main" value="main">
+            </div>
+            <div class="control-group">
+                <button onclick="loadData()">加载数据</button>
+                <span class="info">提示: 使用GitHub Pages的raw URL格式，例如: https://raw.githubusercontent.com/username/repo/main/path/to/file</span>
+            </div>
+            <div class="control-group">
+                <label for="video-select">选择视频 ID:</label>
+                <select id="video-select" disabled>
+                    <option value="">-- 请先加载数据 --</option>
+                </select>
+                <button onclick="loadVisualization()" id="show-btn" disabled>显示可视化</button>
+            </div>
+        </div>
+        <div class="loading" id="loading">加载中...</div>
+        <div class="content-container">
+            <div class="video-container" id="video-container" style="display: none;">
+                <div class="section-title">视频</div>
+                <video id="video-player" controls>
+                    您的浏览器不支持视频播放。
+                </video>
+            </div>
+            <div id="image-container"></div>
+        </div>
+        <div id="text-container" style="display: none;">
+            <div class="section-title">Grounding Task & Seg_captioning Task</div>
+            <div id="text-content"></div>
+        </div>
+        <div id="captioning-container" style="display: none;">
+            <div class="section-title">Captioning Task</div>
+            <div id="captioning-content"></div>
+        </div>
+        <div class="error" id="error"></div>
+    </div>
+
+    <script>
+        let jsonData = null;
+        let logData = null;
+        let annotationsData = null;
+
+        // 从GitHub获取文件内容
+        async function fetchFromGitHub(repo, path, branch = 'main') {
+            const url = `https://raw.githubusercontent.com/${repo}/${branch}/${path}`;
+            try {
+                const response = await fetch(url);
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                return await response.text();
+            } catch (error) {
+                throw new Error(`无法从GitHub获取文件: ${url}\n错误: ${error.message}`);
+            }
+        }
+
+        // 解析时间字符串
+        function parseTimeString(timeStr) {
+            const pattern = /From\s+(\d+)\s+to\s+(\d+)\./;
+            const match = timeStr.match(pattern);
+            if (match) {
+                return [parseInt(match[1]), parseInt(match[2])];
+            }
+            return null;
+        }
+
+        // 解析answer文本
+        function parseAnswer(answerText) {
+            const timestamps = [];
+            const sentences = [];
+            
+            if (!answerText) return { timestamps, sentences };
+            
+            const pattern = /From\s+(\d+)\s+to\s+(\d+),\s+(.*?)(?=\nFrom\s+\d+\s+to\s+\d+,|$)/gs;
+            let match;
+            
+            while ((match = pattern.exec(answerText)) !== null) {
+                const startTime = parseInt(match[1]);
+                const endTime = parseInt(match[2]);
+                let sentence = match[3].trim();
+                
+                if (sentence.endsWith('.')) {
+                    sentence = sentence.slice(0, -1).trim();
+                }
+                
+                timestamps.push([startTime, endTime]);
+                sentences.push(sentence);
+            }
+            
+            return { timestamps, sentences };
+        }
+
+        // 加载数据
+        async function loadData() {
+            const repo = document.getElementById('github-repo').value.trim();
+            const jsonPath = document.getElementById('json-path').value.trim();
+            const txtPath = document.getElementById('txt-path').value.trim();
+            const branch = document.getElementById('branch').value.trim() || 'main';
+            
+            if (!repo || !jsonPath || !txtPath) {
+                document.getElementById('error').textContent = '请填写所有必填字段';
+                return;
+            }
+
+            const loading = document.getElementById('loading');
+            const errorDiv = document.getElementById('error');
+            
+            loading.style.display = 'block';
+            errorDiv.textContent = '';
+            
+            try {
+                // 加载JSON文件
+                const jsonText = await fetchFromGitHub(repo, jsonPath, branch);
+                jsonData = JSON.parse(jsonText);
+                
+                // 加载TXT文件
+                const txtText = await fetchFromGitHub(repo, txtPath, branch);
+                logData = parseLogFile(txtText);
+                
+                // 加载annotations文件（如果存在）
+                try {
+                    const annotationsPath = jsonPath.replace('meeting.json', 'longvale-annotations-eval.json');
+                    const annotationsText = await fetchFromGitHub(repo, annotationsPath, branch);
+                    annotationsData = JSON.parse(annotationsText);
+                } catch (e) {
+                    console.warn('无法加载annotations文件，将使用JSON文件中的duration');
+                    annotationsData = jsonData;
+                }
+                
+                // 更新视频选择列表
+                const videoSelect = document.getElementById('video-select');
+                videoSelect.innerHTML = '<option value="">-- 请选择 --</option>';
+                Object.keys(jsonData).forEach(videoId => {
+                    const option = document.createElement('option');
+                    option.value = videoId;
+                    option.textContent = videoId;
+                    videoSelect.appendChild(option);
+                });
+                
+                videoSelect.disabled = false;
+                document.getElementById('show-btn').disabled = false;
+                
+                loading.style.display = 'none';
+                errorDiv.textContent = `成功加载 ${Object.keys(jsonData).length} 个视频样本`;
+                errorDiv.style.color = 'green';
+                
+            } catch (error) {
+                loading.style.display = 'none';
+                errorDiv.textContent = '错误: ' + error.message;
+                errorDiv.style.color = 'red';
+            }
+        }
+
+        // 解析日志文件
+        function parseLogFile(text) {
+            const groundingData = {};
+            const segCaptioningData = {};
+            const captioningData = {};
+            
+            const lines = text.split('\n');
+            for (const line of lines) {
+                if (!line.trim()) continue;
+                
+                try {
+                    const data = JSON.parse(line);
+                    const videoId = data.video_id;
+                    const task = data.task;
+                    
+                    if (task === 'grounding') {
+                        if (!groundingData[videoId]) {
+                            groundingData[videoId] = { answer: [], iou: [] };
+                        }
+                        const timeRange = parseTimeString(data.answer);
+                        if (timeRange) {
+                            groundingData[videoId].answer.push(timeRange);
+                            groundingData[videoId].iou.push(data.info?.iou || null);
+                        }
+                    } else if (task === 'seg_captioning') {
+                        if (!segCaptioningData[videoId]) {
+                            segCaptioningData[videoId] = { answer: [] };
+                        }
+                        if (data.answer) {
+                            segCaptioningData[videoId].answer.push(data.answer);
+                        }
+                    } else if (task === 'captioning') {
+                        if (!captioningData[videoId]) {
+                            captioningData[videoId] = {};
+                        }
+                        const { timestamps, sentences } = parseAnswer(data.answer);
+                        captioningData[videoId].timestamps = timestamps;
+                        captioningData[videoId].sentences = sentences;
+                    }
+                } catch (e) {
+                    // 忽略JSON解析错误
+                }
+            }
+            
+            // 将百分比时间戳转换为秒数
+            for (const videoId in groundingData) {
+                if (annotationsData && annotationsData[videoId]) {
+                    const duration = annotationsData[videoId].duration;
+                    if (duration) {
+                        const converted = groundingData[videoId].answer.map(ts => {
+                            const [startPercent, endPercent] = ts;
+                            return [
+                                Math.floor(startPercent * duration / 100),
+                                Math.floor(endPercent * duration / 100)
+                            ];
+                        });
+                        groundingData[videoId].answer = converted;
+                    }
+                }
+            }
+            
+            for (const videoId in captioningData) {
+                if (annotationsData && annotationsData[videoId]) {
+                    const duration = annotationsData[videoId].duration;
+                    if (duration && captioningData[videoId].timestamps) {
+                        const converted = captioningData[videoId].timestamps.map(ts => {
+                            const [startPercent, endPercent] = ts;
+                            return [
+                                Math.floor(startPercent * duration / 100),
+                                Math.floor(endPercent * duration / 100)
+                            ];
+                        });
+                        captioningData[videoId].timestamps = converted;
+                    }
+                }
+            }
+            
+            return { groundingData, segCaptioningData, captioningData };
+        }
+
+        // 绘制时间轴可视化
+        function drawTimeline(canvas, duration, gtTimestamps, predTimestamps = null) {
+            const ctx = canvas.getContext('2d');
+            const width = canvas.width;
+            const height = canvas.height;
+            
+            ctx.clearRect(0, 0, width, height);
+            
+            const whiteHeight = 30;
+            const coloredHeight = 40;
+            const padding = 50;
+            const scale = (width - 2 * padding) / duration;
+            
+            // 绘制GT时间轴
+            const gtY = predTimestamps ? height - 100 : height / 2;
+            const gtWhiteY = gtY - whiteHeight / 2;
+            const gtColoredY = gtY - coloredHeight / 2;
+            
+            // GT白色背景
+            ctx.fillStyle = 'white';
+            ctx.strokeStyle = 'black';
+            ctx.lineWidth = 1;
+            ctx.fillRect(padding, gtWhiteY, width - 2 * padding, whiteHeight);
+            ctx.strokeRect(padding, gtWhiteY, width - 2 * padding, whiteHeight);
+            
+            // GT标签
+            ctx.save();
+            ctx.translate(20, gtY);
+            ctx.rotate(-Math.PI / 2);
+            ctx.fillStyle = 'black';
+            ctx.font = 'bold 12px Arial';
+            ctx.textAlign = 'center';
+            ctx.fillText('GT', 0, 0);
+            ctx.restore();
+            
+            // GT红色区间
+            ctx.fillStyle = 'rgba(220, 20, 60, 0.5)';
+            ctx.strokeStyle = '#DC143C';
+            ctx.lineWidth = 1.5;
+            for (const [start, end] of gtTimestamps) {
+                const x = padding + start * scale;
+                const w = (end - start) * scale;
+                ctx.fillRect(x, gtColoredY, w, coloredHeight);
+                ctx.strokeRect(x, gtColoredY, w, coloredHeight);
+            }
+            
+            // 绘制预测时间轴（如果有）
+            if (predTimestamps && predTimestamps.length > 0) {
+                const predY = height - 50;
+                const predWhiteY = predY - whiteHeight / 2;
+                const predColoredY = predY - coloredHeight / 2;
+                
+                // 预测白色背景
+                ctx.fillStyle = 'white';
+                ctx.strokeStyle = 'black';
+                ctx.lineWidth = 1;
+                ctx.fillRect(padding, predWhiteY, width - 2 * padding, whiteHeight);
+                ctx.strokeRect(padding, predWhiteY, width - 2 * padding, whiteHeight);
+                
+                // Pred标签
+                ctx.save();
+                ctx.translate(20, predY);
+                ctx.rotate(-Math.PI / 2);
+                ctx.fillStyle = 'black';
+                ctx.font = 'bold 12px Arial';
+                ctx.textAlign = 'center';
+                ctx.fillText('Pred', 0, 0);
+                ctx.restore();
+                
+                // 预测藏蓝色区间
+                ctx.fillStyle = 'rgba(25, 25, 112, 0.5)';
+                ctx.strokeStyle = '#191970';
+                ctx.lineWidth = 1.5;
+                for (const [start, end] of predTimestamps) {
+                    const x = padding + start * scale;
+                    const w = (end - start) * scale;
+                    ctx.fillRect(x, predColoredY, w, coloredHeight);
+                    ctx.strokeRect(x, predColoredY, w, coloredHeight);
+                }
+            }
+        }
+
+        // 格式化文本内容
+        function formatTextContent(timestamps, sentences, predTimestamps = null, predCaptions = null) {
+            const formatted = [];
+            for (let i = 0; i < timestamps.length; i++) {
+                const [start, end] = timestamps[i];
+                const timestampStr = `[${Math.floor(start)}-${Math.floor(end)}]`;
+                const sentence = sentences[i] || '';
+                
+                let html = `<span class="timestamp">${timestampStr}</span> ${sentence}`;
+                
+                const predParts = [];
+                if (predTimestamps && i < predTimestamps.length && predTimestamps[i]) {
+                    const [predStart, predEnd] = predTimestamps[i];
+                    const predTimestampStr = `[${Math.floor(predStart)}-${Math.floor(predEnd)}]`;
+                    predParts.push(`<span class="pred-timestamp-grounding">${predTimestampStr}</span>`);
+                }
+                
+                if (predCaptions && i < predCaptions.length && predCaptions[i]) {
+                    predParts.push(`<span class="pred-caption">${predCaptions[i]}</span>`);
+                }
+                
+                if (predParts.length > 0) {
+                    html += '\n' + predParts.join(' ') + '\n';
+                }
+                
+                formatted.push(html);
+            }
+            return formatted.join('\n');
+        }
+
+        // 格式化captioning内容
+        function formatCaptioningContent(timestamps, sentences) {
+            if (!timestamps || !sentences) return '';
+            const formatted = [];
+            for (let i = 0; i < Math.min(timestamps.length, sentences.length); i++) {
+                const [start, end] = timestamps[i];
+                const timestampStr = `[${Math.floor(start)}-${Math.floor(end)}]`;
+                let sentence = sentences[i] || '';
+                if (sentence) {
+                    sentence = sentence[0].toUpperCase() + sentence.slice(1);
+                }
+                formatted.push(`<span class="pred-timestamp">${timestampStr}</span> <span class="captioning-sentence">${sentence}</span>`);
+            }
+            return formatted.join('\n');
+        }
+
+        // 加载可视化
+        function loadVisualization() {
+            const videoId = document.getElementById('video-select').value;
+            if (!videoId || !jsonData) {
+                alert('请先选择视频ID并加载数据');
+                return;
+            }
+
+            const videoData = jsonData[videoId];
+            if (!videoData) {
+                document.getElementById('error').textContent = `视频ID ${videoId} 不存在`;
+                return;
+            }
+
+            const duration = videoData.duration;
+            const timestamps = videoData.timestamps;
+            const sentences = videoData.sentences;
+
+            // 获取预测数据
+            const predTimestamps = logData?.groundingData?.[videoId]?.answer || null;
+            const predCaptions = logData?.segCaptioningData?.[videoId]?.answer || null;
+            const predCaptioningTimestamps = logData?.captioningData?.[videoId]?.timestamps || null;
+            const predCaptioningSentences = logData?.captioningData?.[videoId]?.sentences || null;
+
+            // 绘制时间轴
+            const canvas = document.createElement('canvas');
+            canvas.width = 1000;
+            canvas.height = predCaptioningTimestamps ? 200 : 100;
+            canvas.id = 'visualization-canvas';
+            drawTimeline(canvas, duration, timestamps, predCaptioningTimestamps);
+
+            const imageContainer = document.getElementById('image-container');
+            imageContainer.innerHTML = '<div class="section-title">可视化结果</div>';
+            imageContainer.appendChild(canvas);
+
+            // 显示文本内容
+            const textContent = formatTextContent(timestamps, sentences, predTimestamps, predCaptions);
+            document.getElementById('text-content').innerHTML = textContent;
+            document.getElementById('text-container').style.display = 'block';
+
+            // 显示captioning内容
+            const captioningText = formatCaptioningContent(predCaptioningTimestamps, predCaptioningSentences);
+            if (captioningText) {
+                document.getElementById('captioning-content').innerHTML = captioningText;
+                document.getElementById('captioning-container').style.display = 'block';
+            } else {
+                document.getElementById('captioning-container').style.display = 'none';
+            }
+
+            // 隐藏视频容器（GitHub版本不支持视频播放）
+            document.getElementById('video-container').style.display = 'none';
+        }
+    </script>
+</body>
+</html>
+
